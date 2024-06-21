@@ -8,7 +8,7 @@ from shutil import copyfile, rmtree
 from math import log
 
 SHORT_USAGE = """\
-Usage: python3 tester.py OPTIONS TEST.in ...
+Usage: python tester.py OPTIONS TEST.in ...
 
    OPTIONS may include
        --show=N       Show details on up to N tests.

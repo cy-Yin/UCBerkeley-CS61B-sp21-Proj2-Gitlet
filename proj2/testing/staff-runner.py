@@ -9,7 +9,7 @@ from math import log
 from glob import glob
 
 SHORT_USAGE = """\
-Usage: python3 staff-runner.py OPTIONS TEST.in ...
+Usage: python staff-runner.py OPTIONS TEST.in ...
    OPTIONS may include
        --keep         Keep test directories
        --timeout=SEC  Default number of seconds allowed to each execution

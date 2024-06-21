@@ -9,7 +9,7 @@ from math import log
 from glob import glob
 
 SHORT_USAGE = """\
-Usage: python3 runner.py OPTIONS TEST.in ...
+Usage: python runner.py OPTIONS TEST.in ...
    OPTIONS may include
        --keep         Keep test directories
        --lib=DIR   Relative path to directory containing CS61BL libraries
