@@ -32,6 +32,7 @@ public class Blob implements Serializable, Dumpable {
 
     /**
      * Reads in and deserializes a blob from a file with the name of blob SHA1 ID in BLOB_DIR.
+     * Returns null if no file with the given blob ID exists.
      *
      * @param requiredBlobID the name of the branch to load
      * @return the blob
@@ -40,18 +41,22 @@ public class Blob implements Serializable, Dumpable {
     public static Blob fromFile(String requiredBlobID) {
         File blobFile = Utils.join(Repository.BLOB_DIR, requiredBlobID);
         if (!blobFile.exists()) {
-            throw new IllegalArgumentException();
+            return null;
         }
         return Utils.readObject(blobFile, Blob.class);
     }
 
     /** Returns the file content contained in the blob file with the blob ID as its name.
+     * Returns null if no file with the given blob ID exists.
      *
      * @param requiredBlobID the name of the branch to load
      * @return the file content in the blob file
      */
     public static String contentFromFile(String requiredBlobID) {
         Blob requiredBlob = fromFile(requiredBlobID);
+        if (requiredBlob == null) {
+            return null;
+        }
         return requiredBlob.fileContent;
     }
 

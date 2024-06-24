@@ -35,14 +35,20 @@ public class Main {
      *      - stagingArea -- file containing the staging state, including addition and removal
      */
     public static void main(String[] args) {
-        // what if args is empty?
-        if (args.length == 0) {
+        if (args.length == 0) { // what if args is empty?
             System.out.println("Please enter a command.");
             System.exit(0);
         }
 
         Repository repository = new Repository();
         String firstArg = args[0];
+        // handle the remote commands: when first arg ends with "-remote", such as "add-remote"
+//        if (firstArg.equals("push") || firstArg.equals("fetch") || firstArg.equals("pull")
+//            || (firstArg.length() >= 7
+//                && firstArg.substring(firstArg.length() - 7).equals("-remote"))) {
+//            handleRemoteArgs(args, repository);
+//            return;
+//        }
         switch (firstArg) {
             case "init": // handle the `init` command: java gitlet.Main init
                 validateNumAndFormatArgs(args, 1);
@@ -50,8 +56,7 @@ public class Main {
                 break;
             case "add": // handle the `add` command: java gitlet.Main add [file name]
                 validateNumAndFormatArgs(args, 2);
-                String fileNameToBeAdded = args[1];
-                repository.add(fileNameToBeAdded);
+                repository.add(args[1]);
                 break;
             case "commit": // handle the `commit` command: java gitlet.Main commit [message]
                 validateNumAndFormatArgs(args, 2);
@@ -83,6 +88,26 @@ public class Main {
             case "checkout": // handle the `checkout` command
                 handleCheckoutArg(args, repository);
                 break;
+            case "branch": // handle the `branch` command: java gitlet.Main branch [branch name]
+                validateNumAndFormatArgs(args, 2);
+                String branchNameToCreate = args[1];
+                repository.createBranch(branchNameToCreate);
+                break;
+            case "rm-branch": // handle rm-branch command: java gitlet.Main rm-branch [branch name]
+                validateNumAndFormatArgs(args, 2);
+                String branchNameToRemove = args[1];
+                repository.removeBranch(branchNameToRemove);
+                break;
+            case "reset": // handle the `reset` command: java gitlet.Main reset [commit id]
+                validateNumAndFormatArgs(args, 2);
+                String commitID = args[1];
+                repository.reset(commitID);
+                break;
+            case "merge": // handle the `merge` command: java gitlet.Main merge [branch name]
+                validateNumAndFormatArgs(args, 2);
+                String branchNameToMerge = args[1];
+                repository.merge(branchNameToMerge);
+                break;
             default: // if the user inputs a command that does not exist
                 System.out.println("No command with that name exists.");
                 System.exit(0);
@@ -90,7 +115,12 @@ public class Main {
         return;
     }
 
-    /** handle the checkout command. */
+    /** Handles the checkout command.
+     * The checkout command has three cases:
+     * 1. {@code java gitlet.Main checkout -- [file name]}
+     * 2. {@code java gitlet.Main checkout [commit id] -- [file name]}
+     * 3. {@code java gitlet.Main checkout [branch name]}
+     */
     private static void handleCheckoutArg(String[] args, Repository repository) {
         if (args.length == 3) {
             // java gitlet.Main checkout -- [file name]
@@ -109,6 +139,17 @@ public class Main {
             String branchName = args[1];
             repository.checkoutWithBranchName(branchName);
         }
+    }
+
+    /** Handles the 5 gitlet remote commands (extra credits) as follows:
+     *  {@code add-remote}, {@code rm-remote}, {@code push}, {@code fetch} and {@code pull}.
+     *
+     *  * one can put the remote commands in the following switch-cases in {@code main()} method,
+     *  but the cs61b sp21 check style demands that no method may be longer than 80 lines,
+     *  so I just put the last 5 remote commands in this {@code handleRemoteArgs()} method. *
+     */
+    private static void handleRemoteArgs(String[] args, Repository repository) {
+        // TODO
     }
 
     /**

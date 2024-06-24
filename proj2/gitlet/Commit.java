@@ -89,6 +89,7 @@ public class Commit implements Serializable, Dumpable {
 
     /**
      * Reads in and deserializes a commit from a file with name commitID in COMMIT_DIR.
+     * Returns null if no file with the given commit ID exists.
      *
      * @param requiredCommitID the ID of the commit to load (can be abbreviated)
      * @return the commit
@@ -112,6 +113,7 @@ public class Commit implements Serializable, Dumpable {
     /**
      * Reads in and deserializes a commit from a file with the name
      * matching the short less-than-40-long SHA1 ID in COMMIT_DIR.
+     * Returns null if no file with the given commit ID exists.
      *
      * @param shortCommitID the ID of the commit to load
      * @return the commit
@@ -127,7 +129,7 @@ public class Commit implements Serializable, Dumpable {
         }
         File commitFile = Utils.join(Repository.COMMIT_DIR, matchedCommitID);
         if (!commitFile.exists()) {
-            throw new IllegalArgumentException();
+            return null;
         }
         return Utils.readObject(commitFile, Commit.class);
     }
@@ -141,6 +143,18 @@ public class Commit implements Serializable, Dumpable {
         }
         File saveFile = Utils.join(Repository.COMMIT_DIR, commitID);
         Utils.writeObject(saveFile, this);
+    }
+
+    /** Returns the content of the file in this commit whose name matches the given file name.
+     * Returns null if the {@code mapFileNameToBlob} of this commit does not contain this file.
+     */
+    public String getFileContentInCommit(String fileName) {
+        if (!mapFileNameToBlob.containsKey(fileName)) {
+            return null;
+        }
+        String fileBlobID = mapFileNameToBlob.get(fileName);
+        String fileContent = Blob.contentFromFile(fileBlobID);
+        return fileContent;
     }
 
     /** Commit instances will be presented when calling java gitlet.Main log as follows.

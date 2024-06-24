@@ -33,6 +33,7 @@ public class Branch implements Serializable, Dumpable {
 
     /**
      * Reads in and deserializes a branch from a file with the branch name in BRANCH_DIR.
+     * Returns null if no file with the given branch name exists.
      *
      * @param branchName the name of the branch to load
      * @return the branch
