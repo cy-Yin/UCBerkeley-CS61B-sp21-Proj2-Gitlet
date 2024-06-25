@@ -525,38 +525,8 @@ public class Repository implements Serializable, Dumpable {
         filesToConsider.addAll(splitPointCommit.mapFileNameToBlob.keySet());
         boolean isConflicted = false;
         for (String file : filesToConsider) {
-            boolean isFileInCurrent = currentHeadCommit.mapFileNameToBlob.containsKey(file);
-            boolean isFileInOther = otherBranchCommit.mapFileNameToBlob.containsKey(file);
-            boolean isFileInSplit = splitPointCommit.mapFileNameToBlob.containsKey(file);
-            String fileContentInCurrent = currentHeadCommit.getFileContentInCommit(file);
-            String fileContentInOther = otherBranchCommit.getFileContentInCommit(file);
-            String fileContentInSplit = splitPointCommit.getFileContentInCommit(file);
-            if (isFileInCurrent && isFileInOther && isFileInSplit
-                    && !fileContentInCurrent.equals(fileContentInSplit)
-                    && !fileContentInOther.equals(fileContentInSplit)
-                    && !fileContentInCurrent.equals(fileContentInOther)) {
-                // the file exists in (2 + 1) commits but modified differently
-                mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
-                isConflicted = true;
-            } else if (!isFileInSplit && isFileInCurrent && isFileInOther
-                    && !fileContentInCurrent.equals(fileContentInOther)) {
-                // file was absent at split point and has different contents in 2 branches
-                mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
-                isConflicted = true;
-            } else if (isFileInSplit && isFileInCurrent && !isFileInOther
-                    && !fileContentInSplit.equals(fileContentInCurrent)) {
-                // file contents of current branch are changed and file in given branch is deleted
-                mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
-                isConflicted = true;
-            } else if (isFileInSplit && isFileInOther && !isFileInCurrent
-                    && !fileContentInSplit.equals(fileContentInOther)) {
-                // file contents of given branch are changed and file in current branch is deleted
-                mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
-                isConflicted = true;
-            } else { // the merge will have no conflicts
-                mergeFileWithNoConflicts(file, currentHeadCommit,
-                                            otherBranchCommit, splitPointCommit);
-            }
+            isConflicted = mergeFile(file,
+                            currentHeadCommit, otherBranchCommit, splitPointCommit);
         }
         // Once files have been updated according to the above, and the split point was
         // not current branch or given branch, merge automatically commits with the log message
@@ -624,13 +594,13 @@ public class Repository implements Serializable, Dumpable {
     private String getSplitPointCommitID(String currentBranchCommitID,
                                          String otherBranchCommitID, String otherBranchName) {
         String splitPointCommitID = "";
-        Map<String, Integer> currentCommitsTree = buildCommitsTree(currentBranchCommitID);
-        Map<String, Integer> otherCommitsTree = buildCommitsTree(otherBranchCommitID);
+        Map<String, Integer> currentCommitsGraph = buildCommitsGraph(currentBranchCommitID);
+        Map<String, Integer> otherCommitsGraph = buildCommitsGraph(otherBranchCommitID);
 
         int minDepth = Integer.MAX_VALUE;
-        for (String currentCommitID : currentCommitsTree.keySet()) {
-            int depth = currentCommitsTree.get(currentCommitID);
-            if (otherCommitsTree.containsKey(currentCommitID) && depth < minDepth) {
+        for (String currentCommitID : currentCommitsGraph.keySet()) {
+            int depth = currentCommitsGraph.get(currentCommitID);
+            if (otherCommitsGraph.containsKey(currentCommitID) && depth < minDepth) {
                 splitPointCommitID = currentCommitID;
                 minDepth = depth;
             }
@@ -660,13 +630,13 @@ public class Repository implements Serializable, Dumpable {
      * @param commitID the commit ID
      * @return the map from the commit id to the depth
      */
-    private Map<String, Integer> buildCommitsTree(String commitID) {
-        Map<String, Integer> commitsTree = new HashMap<>();
-        buildCommitsGraphHelper(commitID, 0, commitsTree);
-        return commitsTree;
+    private Map<String, Integer> buildCommitsGraph(String commitID) {
+        Map<String, Integer> commitsGraph = new HashMap<>();
+        buildCommitsGraphHelper(commitID, 0, commitsGraph);
+        return commitsGraph;
     }
 
-    /** Helper function for {@code buildCommitsTree()} method.
+    /** Helper function for {@code buildCommitsGraph()} method.
      * Builds the commits map from the given commit ID with a given starting depth.
      *
      * The recursively building process has the runtime complexity of {@code O(N lgN + D)}, where
@@ -674,15 +644,15 @@ public class Repository implements Serializable, Dumpable {
      * D is the total amount of data in all the files under these commits.
      */
     private void buildCommitsGraphHelper(String commitID, int depth,
-                                                Map<String, Integer> commitsTree) {
+                                                Map<String, Integer> commitsGraph) {
         if (commitID == null) {
             return;
         }
-        commitsTree.put(commitID, depth);
+        commitsGraph.put(commitID, depth);
 
         Commit commit = Commit.fromFile(commitID);
-        buildCommitsGraphHelper(commit.getFirstParent(), depth + 1, commitsTree);
-        buildCommitsGraphHelper(commit.getSecondParent(), depth + 1, commitsTree);
+        buildCommitsGraphHelper(commit.getFirstParent(), depth + 1, commitsGraph);
+        buildCommitsGraphHelper(commit.getSecondParent(), depth + 1, commitsGraph);
     }
 
     /** For one file, merge it from the given branch (other branch) into the current branch.
@@ -706,21 +676,28 @@ public class Repository implements Serializable, Dumpable {
      *    in the given branch should be removed (and untracked).
      * 7. Any files present at the split point, unmodified in the given branch, and absent in the
      *    current branch should remain absent.
+     * 8. Any files modified in different ways in the current and given branches are in conflict.
+     *    "Modified in different ways" can mean that the contents of both are changed and
+     *    different from other, or the contents of one are changed and the other file is deleted,
+     *    or the file was absent at the split point and has different contents in the given and
+     *    current branches. In this case, replace the contents of the conflicted file and stage
+     *    the result. Treat a deleted file in a branch as an empty file.
      *
      * @param file tha name of the to-be-merged file
      * @param currentHeadCommit the head commit of the current branch
      * @param otherBranchCommit the commit the other branch pointing to
      * @param splitPointCommit the latest common ancestor of the current and given branch heads
      */
-    private void mergeFileWithNoConflicts(String file, Commit currentHeadCommit,
+    private boolean mergeFile(String file, Commit currentHeadCommit,
                                     Commit otherBranchCommit, Commit splitPointCommit) {
+        boolean isConflicted = false;
         boolean isFileInCurrent = currentHeadCommit.mapFileNameToBlob.containsKey(file);
         boolean isFileInOther = otherBranchCommit.mapFileNameToBlob.containsKey(file);
         boolean isFileInSplit = splitPointCommit.mapFileNameToBlob.containsKey(file);
+        String fileContentInCurrent = currentHeadCommit.getFileContentInCommit(file);
+        String fileContentInOther = otherBranchCommit.getFileContentInCommit(file);
+        String fileContentInSplit = splitPointCommit.getFileContentInCommit(file);
         if (isFileInCurrent && isFileInOther && isFileInSplit) {
-            String fileContentInCurrent = currentHeadCommit.getFileContentInCommit(file);
-            String fileContentInOther = otherBranchCommit.getFileContentInCommit(file);
-            String fileContentInSplit = splitPointCommit.getFileContentInCommit(file);
             boolean isFileModifiedInCurrent = !fileContentInCurrent.equals(fileContentInSplit);
             boolean isFileModifiedInOther = !fileContentInOther.equals(fileContentInSplit);
             if (isFileModifiedInOther && !isFileModifiedInCurrent) { // Case 1
@@ -736,8 +713,8 @@ public class Repository implements Serializable, Dumpable {
             } else if (!isFileModifiedInOther && isFileModifiedInCurrent) { // Case 2
                 /* Any files that have been modified in the current branch but not
                  * in the given branch since the split point should stay as they are. */
-                return;
-            } else if (!isFileModifiedInOther && !isFileModifiedInCurrent) {
+                isConflicted = false;
+            } else if (isFileModifiedInOther && isFileModifiedInCurrent) {
                 if (fileContentInCurrent.equals(fileContentInOther)) { // Case 3
                     /* Any files that have been modified in both the current and given
                     branch in the same way (i.e., both files now have the same content
@@ -745,13 +722,21 @@ public class Repository implements Serializable, Dumpable {
                     removed from both the current and given branch, but a file of the same name
                     is present in the working directory, it is left alone and continues to be
                     absent (not tracked nor staged) in the merge. */
-                    return;
+                    isConflicted = false;
+                } else { // Case 8: the file exists in (2 + 1) commits but modified differently
+                    mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
+                    isConflicted = true;
                 }
             }
+        } else if (!isFileInSplit && isFileInCurrent && isFileInOther
+                && !fileContentInCurrent.equals(fileContentInOther)) { // Case 8
+            // file was absent at split point and has different contents in 2 branches
+            mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
+            isConflicted = true;
         } else if (!isFileInSplit && !isFileInOther && isFileInCurrent) { // Case 4
             /* Any files that were not present at the split point and
              * are present only in the current branch should remain as they are. */
-            return;
+            isConflicted = false;
         } else if (!isFileInSplit && !isFileInCurrent && isFileInOther) { // Case 5
             /* Any files that were not present at the split point and
              * are present only in the given branch should be checked out and staged. */
@@ -759,31 +744,30 @@ public class Repository implements Serializable, Dumpable {
             checkoutWithCommitIDAndFileName(otherBranchCommit.getCommitID(), file);
             stagingArea.addFile(file, head);
             stagingArea.saveStagingArea();
-        } else if (!isFileInOther && isFileInSplit && isFileInCurrent) { // Case 6
-            /* Any files present at split point, unmodified in the current branch,
-             * and absent in the given branch should be removed (and untracked). */
-            String fileContentInCurrent = currentHeadCommit.getFileContentInCommit(file);
-            String fileContentInSplit = splitPointCommit.getFileContentInCommit(file);
-            if (fileContentInCurrent.equals(fileContentInSplit)) {
+        } else if (!isFileInOther && isFileInSplit && isFileInCurrent) {
+            if (fileContentInCurrent.equals(fileContentInSplit)) { // Case 6
+                /* Any files present at split point, unmodified in the current branch,
+                 * and absent in the given branch should be removed (and untracked). */
                 remove(file);
+            } else { // Case 8: file contents of given changed and file in current deleted
+                mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
+                isConflicted = true;
             }
-        } else if (!isFileInCurrent && isFileInSplit && isFileInOther) { // Case 7
-            /* Any files present at the split point, unmodified in the given branch,
-             * and absent in the current branch should remain absent. */
-            String fileContentInOther = otherBranchCommit.getFileContentInCommit(file);
-            String fileContentInSplit = splitPointCommit.getFileContentInCommit(file);
-            if (fileContentInOther.equals(fileContentInSplit)) {
-                return;
+        } else if (!isFileInCurrent && isFileInSplit && isFileInOther) {
+            if (fileContentInOther.equals(fileContentInSplit)) { // Case 7
+                /* Any files present at the split point, unmodified in the given branch,
+                 * and absent in the current branch should remain absent. */
+                isConflicted = false;
+            } else { // Case 8: file contents of current changed and file in given deleted
+                mergeFileWithConflicts(file, fileContentInCurrent, fileContentInOther);
+                isConflicted = true;
             }
         }
+        return isConflicted;
     }
 
     /** Deal with the case that a merge of the file have conflicts.
-     *  Any files modified in different ways in the current and given branches are in conflict.
-     *  "Modified in different ways" can mean that the contents of both are changed and
-     *  different from other, or the contents of one are changed and the other file is deleted,
-     *  or the file was absent at the split point and has different contents in the given and
-     *  current branches. In this case, replace the contents of the conflicted file with
+     *  The contents of the conflicted file is replaced with
      *  ---------------------------------------------------
      *  * <<<<<<< HEAD                                    *
      *  * contents of file in current branch              *
@@ -791,7 +775,7 @@ public class Repository implements Serializable, Dumpable {
      *  * contents of file in given branch                *
      *  * >>>>>>>                                         *
      *  ---------------------------------------------------
-     *  (replacing "contents of..." with the indicated file's contents) and stage the result.
+     *  (replacing "contents of..." with the indicated file's contents).
      *  Treat a deleted file in a branch as an empty file. Use straight concatenation here.
      *  In the case of a file with no newline at the end, you might well end up with something
      *  like this:
